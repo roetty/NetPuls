@@ -11,6 +11,9 @@ Kleines Tray-Programm, das nur eines macht: den aktuellen Download/Upload live a
 - Rechtsklick-Menü: Mini-Fenster an/aus, Heimnetz mitzählen an/aus, Netzwerkkarte wählen, Einheit (Mbit/s oder MB/s), Autostart, Beenden.
 - Keine Statistik, keine Datenbank, keine Installation. Einstellungen liegen in `%APPDATA%\NetPuls\settings.json`.
 
+## Download
+[**NetPuls.exe herunterladen**](https://github.com/roetty/NetPuls/raw/main/download/NetPuls.exe) (Windows 10/11, 64 Bit, ca. 70 MB)
+
 ## Starten
 `NetPuls.exe` doppelklicken. Fertig. (Windows SmartScreen meldet evtl. „unbekannter Herausgeber“,
 weil die Datei nicht signiert ist: „Weitere Informationen“ → „Trotzdem ausführen“.)
