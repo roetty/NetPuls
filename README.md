@@ -8,7 +8,8 @@ Kleines Tray-Programm, das nur eines macht: den aktuellen Download/Upload live a
 - **Mini-Fenster an der Taskleiste**: kleines Live-Diagramm mit Zahlen, sitzt unten rechts über der Uhr,
   bleibt im Vordergrund, mit der Maus verschiebbar. Doppelklick öffnet das große Fenster.
 - **Großes Fenster**: Live-Diagramm mit Achsen, aktuelle Werte, Spitzenwerte, Zeitraum 1–60 Minuten.
-- Rechtsklick-Menü: Mini-Fenster an/aus, Heimnetz mitzählen an/aus, Netzwerkkarte wählen, Einheit (Mbit/s oder MB/s), Autostart, Beenden.
+- Rechtsklick-Menü: Mini-Fenster an/aus, Heimnetz mitzählen an/aus, Netzwerkkarte wählen, Einheit (Mbit/s oder MB/s), Autostart, Hilfe, Über NetPuls, Beenden.
+- **Hilfe und Info**: eigenes Fenster mit Bedienungshilfe und Programm-Infos (Menü, „?“-Knopf oder F1 im großen Fenster).
 - Keine Statistik, keine Datenbank, keine Installation. Einstellungen liegen in `%APPDATA%\NetPuls\settings.json`.
 
 ## Download
@@ -51,4 +52,5 @@ Zum Ausprobieren geht auch im Ordner `src`: `dotnet run`.
 - `EtwInternetCounter.cs` – zählt nur Internet-Traffic (ETW, filtert Heimnetz-Adressen)
 - `TrafficChart.cs` – zeichnet das Diagramm (groß und kompakt)
 - `TrayIconRenderer.cs` – zeichnet das Tray-Symbol
+- `HelpWindow.cs` – Hilfe- und Info-Fenster
 - `MiniWindow.cs`, `MainWindow.cs`, `TrayApp.cs` – Fenster, Menü, Ablauf

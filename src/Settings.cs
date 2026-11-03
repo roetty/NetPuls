@@ -19,8 +19,9 @@ public sealed class Settings
     public int? MainWidth { get; set; }
     public int? MainHeight { get; set; }
 
-    private static string FilePath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NetPuls", "settings.json");
+    public static string FolderPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NetPuls");
+    private static string FilePath => Path.Combine(FolderPath, "settings.json");
 
     public static Settings Load()
     {

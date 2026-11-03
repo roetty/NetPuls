@@ -16,6 +16,7 @@ public sealed class MainWindow : Form
 
     public bool AllowClose { get; set; }
     public event Action? UnitChanged;
+    public event Action? HelpWanted;
 
     public MainWindow(TrafficHistory history, Settings settings, Icon icon)
     {
@@ -77,7 +78,18 @@ public sealed class MainWindow : Form
         };
         TopMost = settings.MainTopMost;
 
-        controls.Controls.AddRange(new Control[] { _range, _unit, _topMost });
+        var helpButton = new Button
+        {
+            Text = "?", FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(45, 49, 56), ForeColor = ForeColor,
+            Width = Dp(28), Height = _range.Height, Margin = new Padding(10, 2, 0, 0), TabStop = false,
+        };
+        helpButton.FlatAppearance.BorderColor = Color.FromArgb(70, 76, 86);
+        helpButton.Click += (_, _) => HelpWanted?.Invoke();
+        new ToolTip().SetToolTip(helpButton, "Hilfe (F1)");
+        KeyPreview = true;
+        KeyDown += (_, e) => { if (e.KeyCode == Keys.F1) { e.Handled = true; HelpWanted?.Invoke(); } };
+
+        controls.Controls.AddRange(new Control[] { _range, _unit, _topMost, helpButton });
 
         top.Controls.Add(_down, 0, 0);
         top.Controls.Add(_up, 1, 0);

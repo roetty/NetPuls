@@ -14,6 +14,7 @@ public sealed class TrayApp : ApplicationContext
     private readonly MiniWindow _mini;
     private readonly Icon _appIcon;
     private MainWindow? _main;
+    private HelpWindow? _help;
     private int _tick;
 
     public TrayApp()
@@ -34,11 +35,13 @@ public sealed class TrayApp : ApplicationContext
         unitMenu.DropDownItems.AddRange(new ToolStripItem[] { _bitsItem, _bytesItem });
         _lanItem = new ToolStripMenuItem("Heimnetz-Traffic mitzählen", null, (_, _) => ToggleLan());
         _autostartItem = new ToolStripMenuItem("Mit Windows starten", null, (_, _) => ToggleAutostart());
+        var helpItem = new ToolStripMenuItem("Hilfe", null, (_, _) => ShowHelp(0));
+        var infoItem = new ToolStripMenuItem("Über NetPuls", null, (_, _) => ShowHelp(1));
         var exit = new ToolStripMenuItem("Beenden", null, (_, _) => Exit());
         _menu.Items.AddRange(new ToolStripItem[]
         {
             open, _miniItem, new ToolStripSeparator(), _lanItem, _adapterMenu, unitMenu, _autostartItem,
-            new ToolStripSeparator(), exit,
+            new ToolStripSeparator(), helpItem, infoItem, new ToolStripSeparator(), exit,
         });
         _menu.Opening += (_, _) =>
         {
@@ -185,6 +188,7 @@ public sealed class TrayApp : ApplicationContext
         {
             _main = new MainWindow(_sampler.History, _settings, _appIcon);
             _main.UnitChanged += RefreshViews;
+            _main.HelpWanted += () => ShowHelp(0);
         }
         _main.Show();
         if (_main.WindowState == FormWindowState.Minimized) _main.WindowState = FormWindowState.Normal;
@@ -192,8 +196,16 @@ public sealed class TrayApp : ApplicationContext
         _main.UpdateView(_settings.UseBits, AdapterInfo());
     }
 
+    private void ShowHelp(int tab)
+    {
+        if (_help == null || _help.IsDisposed)
+            _help = new HelpWindow(_appIcon, () => _sampler.ModeInfo);
+        _help.ShowTab(tab);
+    }
+
     private void Exit()
     {
+        _help?.Dispose();
         if (_main != null)
         {
             _main.SaveBounds();
