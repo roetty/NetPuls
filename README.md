@@ -8,7 +8,7 @@ Kleines Tray-Programm, das nur eines macht: den aktuellen Download/Upload live a
 - **Mini-Fenster an der Taskleiste**: kleines Live-Diagramm mit Zahlen, sitzt unten rechts über der Uhr,
   bleibt im Vordergrund, mit der Maus verschiebbar. Doppelklick öffnet das große Fenster.
 - **Großes Fenster**: Live-Diagramm mit Achsen, aktuelle Werte, Spitzenwerte, Zeitraum 1–60 Minuten.
-- Rechtsklick-Menü: Mini-Fenster an/aus, Netzwerkkarte wählen, Einheit (Mbit/s oder MB/s), Autostart, Beenden.
+- Rechtsklick-Menü: Mini-Fenster an/aus, Heimnetz mitzählen an/aus, Netzwerkkarte wählen, Einheit (Mbit/s oder MB/s), Autostart, Beenden.
 - Keine Statistik, keine Datenbank, keine Installation. Einstellungen liegen in `%APPDATA%\NetPuls\settings.json`.
 
 ## Starten
@@ -20,10 +20,22 @@ Tipp: Damit das Tray-Symbol immer sichtbar ist, in Windows 11 unter
 (in Windows 10 das Symbol aus dem ^-Überlauf in die Taskleiste ziehen).
 
 ## Was gemessen wird
-„Automatisch (Internet)“ summiert alle aktiven Netzwerkkarten, die ein Standard-Gateway haben,
-also normalerweise genau deine LAN- oder WLAN-Verbindung zum Router. Gemessen wird alles, was über diese
-Karte läuft (also auch z. B. Kopien zu einem NAS im Heimnetz).
-Bei VPN kann der Traffic doppelt gezählt werden – dann im Menü unter *Netzwerkkarte* gezielt eine Karte wählen.
+NetPuls zählt standardmäßig **nur Internet-Traffic**. Übertragungen innerhalb des Heimnetzes
+(z. B. Kopien zum NAS, Streaming vom Medienserver, Drucker) werden herausgefiltert.
+
+Dafür nutzt NetPuls die Windows-Ereignisablaufverfolgung (ETW): Windows meldet jede TCP/UDP-Übertragung
+mit Quell- und Zieladresse. Liegt die Gegenstelle im Heimnetz (10.x, 172.16–31.x, 192.168.x, Link-Local,
+IPv6 fc00::/7 und fe80::, Multicast), wird sie nicht gezählt. Deshalb braucht NetPuls **Administratorrechte**
+und fragt beim Start per UAC danach. Mit „Mit Windows starten“ legt NetPuls eine Aufgabe in der
+Aufgabenplanung an, dann startet es bei der Anmeldung ohne Nachfrage.
+
+Gezählt werden die Nutzdaten von TCP/UDP, ohne Paket-Header. Die Werte liegen daher ein paar Prozent unter
+dem, was die Netzwerkkarte insgesamt sieht.
+
+Ob der Filter aktiv ist, steht im Tooltip des Tray-Symbols und unten links im großen Fenster.
+Klappt er nicht (z. B. ohne Adminrechte), zählt NetPuls wie vorher den gesamten Traffic der Netzwerkkarte
+und zeigt einen Hinweis. Im Menü lässt sich mit „Heimnetz-Traffic mitzählen“ auch bewusst umschalten.
+Die Auswahl unter *Netzwerkkarte* gilt nur in diesem Modus.
 
 ## Selbst bauen
 1. .NET 8 SDK installieren: `winget install Microsoft.DotNet.SDK.8`
@@ -32,7 +44,8 @@ Bei VPN kann der Traffic doppelt gezählt werden – dann im Menü unter *Netzwe
 Zum Ausprobieren geht auch im Ordner `src`: `dotnet run`.
 
 ## Dateien
-- `TrafficSampler.cs` – liest jede Sekunde die Byte-Zähler der Netzwerkkarten
+- `TrafficSampler.cs` – sammelt jede Sekunde die Messwerte
+- `EtwInternetCounter.cs` – zählt nur Internet-Traffic (ETW, filtert Heimnetz-Adressen)
 - `TrafficChart.cs` – zeichnet das Diagramm (groß und kompakt)
 - `TrayIconRenderer.cs` – zeichnet das Tray-Symbol
 - `MiniWindow.cs`, `MainWindow.cs`, `TrayApp.cs` – Fenster, Menü, Ablauf

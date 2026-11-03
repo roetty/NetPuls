@@ -53,6 +53,14 @@ public sealed class TrafficSampler : IDisposable
     private NetworkInterface[] _interfaces = Array.Empty<NetworkInterface>();
     private int _ticksSinceRefresh = int.MaxValue;
     private string? _adapterId;
+    private EtwInternetCounter? _etw;
+    private int _etwSilentSeconds;
+    private bool _internetOnly;
+
+    /// <summary>Kurzbeschreibung, was gerade gemessen wird (für die Anzeige).</summary>
+    public string ModeInfo { get; private set; } = "";
+    /// <summary>true, wenn tatsächlich nur Internet-Traffic gezählt wird.</summary>
+    public bool FilteringActive => _etw != null;
 
     public TrafficHistory History { get; } = new(3600); // 1 Stunde bei 1 s
     public event Action<Sample>? Sampled;
@@ -70,8 +78,46 @@ public sealed class TrafficSampler : IDisposable
         NetworkChange.NetworkAddressChanged += (_, _) => _ticksSinceRefresh = int.MaxValue;
     }
 
+    /// <summary>true = Heimnetz-Traffic herausfiltern (benötigt Administratorrechte).</summary>
+    public bool InternetOnly
+    {
+        get => _internetOnly;
+        set { _internetOnly = value; UpdateMode(); }
+    }
+
+    private void UpdateMode()
+    {
+        _etw?.Dispose();
+        _etw = null;
+        _etwSilentSeconds = 0;
+        if (_internetOnly)
+        {
+            try
+            {
+                var etw = new EtwInternetCounter();
+                etw.Start();
+                _etw = etw;
+                ModeInfo = "Nur Internet-Traffic (Heimnetz wird herausgefiltert)";
+                return;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                ModeInfo = "Achtung: Heimnetz wird mitgezählt – NetPuls läuft ohne Administratorrechte";
+            }
+            catch (Exception ex)
+            {
+                ModeInfo = "Achtung: Heimnetz wird mitgezählt – Filter konnte nicht starten (" + ex.Message + ")";
+            }
+        }
+        else
+        {
+            ModeInfo = "Gesamter Traffic der Netzwerkkarte (inkl. Heimnetz)";
+        }
+    }
+
     public void Start()
     {
+        if (ModeInfo.Length == 0) UpdateMode();
         Tick();
         _timer.Start();
     }
@@ -145,6 +191,26 @@ public sealed class TrafficSampler : IDisposable
         foreach (var gone in _last.Keys.Where(k => !seen.Contains(k)).ToList())
             _last.Remove(gone);
 
+        if (_etw != null)
+        {
+            var (down, up, events) = _etw.Take();
+            // Sicherheitsnetz: Wenn die Netzwerkkarte deutlich Traffic zeigt, der Filter aber
+            // gar nichts meldet, funktioniert er auf diesem PC nicht -> auf Kartenzähler zurückfallen.
+            if (events == 0 && dRx + dTx > 50_000) _etwSilentSeconds++;
+            else if (events > 0) _etwSilentSeconds = 0;
+            if (_etwSilentSeconds >= 15)
+            {
+                _etw.Dispose();
+                _etw = null;
+                ModeInfo = "Achtung: Heimnetz wird mitgezählt – Filter liefert keine Daten";
+            }
+            else
+            {
+                dRx = down;
+                dTx = up;
+            }
+        }
+
         if (seconds < 0.2) return; // erster Aufruf: nur Startwerte merken
 
         var sample = new Sample(DateTime.Now, dRx / seconds, dTx / seconds);
@@ -152,5 +218,10 @@ public sealed class TrafficSampler : IDisposable
         Sampled?.Invoke(sample);
     }
 
-    public void Dispose() => _timer.Dispose();
+    public void Dispose()
+    {
+        _timer.Dispose();
+        _etw?.Dispose();
+        _etw = null;
+    }
 }

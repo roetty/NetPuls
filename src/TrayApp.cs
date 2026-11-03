@@ -10,7 +10,7 @@ public sealed class TrayApp : ApplicationContext
     private readonly TrayIconRenderer _renderer = new();
     private readonly NotifyIcon _tray;
     private readonly ContextMenuStrip _menu;
-    private readonly ToolStripMenuItem _miniItem, _adapterMenu, _bitsItem, _bytesItem, _autostartItem;
+    private readonly ToolStripMenuItem _miniItem, _adapterMenu, _bitsItem, _bytesItem, _autostartItem, _lanItem;
     private readonly MiniWindow _mini;
     private readonly Icon _appIcon;
     private MainWindow? _main;
@@ -20,6 +20,7 @@ public sealed class TrayApp : ApplicationContext
     {
         _appIcon = CreateAppIcon();
         _sampler.AdapterId = _settings.AdapterId;
+        _sampler.InternetOnly = _settings.InternetOnly;
 
         _menu = new ContextMenuStrip();
         var open = new ToolStripMenuItem("Großes Fenster öffnen", null, (_, _) => ShowMain()) { Font = new Font(SystemFonts.MenuFont ?? Control.DefaultFont, FontStyle.Bold) };
@@ -31,11 +32,12 @@ public sealed class TrayApp : ApplicationContext
         _bitsItem = new ToolStripMenuItem("Mbit/s (Bits)", null, (_, _) => SetUnit(true));
         _bytesItem = new ToolStripMenuItem("MB/s (Bytes)", null, (_, _) => SetUnit(false));
         unitMenu.DropDownItems.AddRange(new ToolStripItem[] { _bitsItem, _bytesItem });
+        _lanItem = new ToolStripMenuItem("Heimnetz-Traffic mitzählen", null, (_, _) => ToggleLan());
         _autostartItem = new ToolStripMenuItem("Mit Windows starten", null, (_, _) => ToggleAutostart());
         var exit = new ToolStripMenuItem("Beenden", null, (_, _) => Exit());
         _menu.Items.AddRange(new ToolStripItem[]
         {
-            open, _miniItem, new ToolStripSeparator(), _adapterMenu, unitMenu, _autostartItem,
+            open, _miniItem, new ToolStripSeparator(), _lanItem, _adapterMenu, unitMenu, _autostartItem,
             new ToolStripSeparator(), exit,
         });
         _menu.Opening += (_, _) =>
@@ -44,6 +46,7 @@ public sealed class TrayApp : ApplicationContext
             _bitsItem.Checked = _settings.UseBits;
             _bytesItem.Checked = !_settings.UseBits;
             _miniItem.Checked = _settings.ShowMiniWindow;
+            _lanItem.Checked = !_settings.InternetOnly;
         };
 
         _tray = new NotifyIcon
@@ -70,7 +73,8 @@ public sealed class TrayApp : ApplicationContext
     {
         bool bits = _settings.UseBits;
         _tray.Icon = _renderer.Render(_sampler.History, bits);
-        string tip = $"NetPuls\n↓ {Units.Format(s.Down, bits)}\n↑ {Units.Format(s.Up, bits)}";
+        string head = _sampler.FilteringActive ? "NetPuls (nur Internet)" : "NetPuls (inkl. Heimnetz)";
+        string tip = $"{head}\n↓ {Units.Format(s.Down, bits)}\n↑ {Units.Format(s.Up, bits)}";
         _tray.Text = tip.Length > 127 ? tip[..127] : tip;
 
         if (_mini.Visible)
@@ -83,6 +87,13 @@ public sealed class TrayApp : ApplicationContext
     }
 
     private string AdapterInfo()
+    {
+        if (_sampler.FilteringActive) return _sampler.ModeInfo;
+        string prefix = _settings.InternetOnly ? _sampler.ModeInfo + "  ·  " : "";
+        return prefix + CardInfo();
+    }
+
+    private string CardInfo()
     {
         if (_settings.AdapterId == null) return "Netzwerkkarte: automatisch (alle Verbindungen mit Internet-Gateway)";
         var nic = SafeInterfaces().FirstOrDefault(n => n.Id == _settings.AdapterId);
@@ -121,6 +132,14 @@ public sealed class TrayApp : ApplicationContext
         _settings.AdapterId = id;
         _sampler.AdapterId = id;
         _settings.Save();
+    }
+
+    private void ToggleLan()
+    {
+        _settings.InternetOnly = !_settings.InternetOnly;
+        _sampler.InternetOnly = _settings.InternetOnly;
+        _settings.Save();
+        RefreshViews();
     }
 
     private void SetUnit(bool bits)

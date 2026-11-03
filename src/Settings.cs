@@ -7,6 +7,8 @@ public sealed class Settings
 {
     public string? AdapterId { get; set; }
     public bool UseBits { get; set; } = true;
+    /// <summary>Heimnetz-Traffic herausfiltern (nur Internet zählen).</summary>
+    public bool InternetOnly { get; set; } = true;
     public bool ShowMiniWindow { get; set; } = true;
     public int? MiniX { get; set; }
     public int? MiniY { get; set; }
@@ -42,27 +44,60 @@ public sealed class Settings
     }
 }
 
-/// <summary>Autostart über HKCU\...\Run (kein Admin nötig).</summary>
+/// <summary>
+/// Autostart über die Windows-Aufgabenplanung mit höchsten Rechten. So startet NetPuls bei der
+/// Anmeldung mit Administratorrechten, ohne jedes Mal die UAC-Abfrage zu zeigen.
+/// </summary>
 public static class Autostart
 {
+    private const string TaskName = "NetPuls";
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string ValueName = "NetPuls";
 
-    public static bool IsEnabled
-    {
-        get
-        {
-            using var key = Registry.CurrentUser.OpenSubKey(RunKey);
-            return key?.GetValue(ValueName) is string;
-        }
-    }
+    public static bool IsEnabled => RunHidden("schtasks.exe", $"/Query /TN \"{TaskName}\"") == 0;
 
     public static void Set(bool enabled)
     {
-        using var key = Registry.CurrentUser.CreateSubKey(RunKey);
-        if (enabled && Environment.ProcessPath is { } path)
-            key.SetValue(ValueName, $"\"{path}\"");
-        else
-            key.DeleteValue(ValueName, false);
+        // Eintrag aus Version 1.0 (Run-Schlüssel) entfernen, der würde ohne Adminrechte starten
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RunKey, true);
+            key?.DeleteValue("NetPuls", false);
+        }
+        catch { }
+
+        if (!enabled)
+        {
+            RunHidden("schtasks.exe", $"/Delete /TN \"{TaskName}\" /F");
+            return;
+        }
+
+        string path = Environment.ProcessPath ?? throw new InvalidOperationException("Programmpfad unbekannt.");
+        string user = System.Security.Principal.WindowsIdentity.GetCurrent().Name;
+        string ps =
+            $"$a = New-ScheduledTaskAction -Execute '{Esc(path)}'; " +
+            $"$t = New-ScheduledTaskTrigger -AtLogOn -User '{Esc(user)}'; " +
+            $"$p = New-ScheduledTaskPrincipal -UserId '{Esc(user)}' -LogonType Interactive -RunLevel Highest; " +
+            "$s = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew; " +
+            $"Register-ScheduledTask -TaskName '{TaskName}' -Action $a -Trigger $t -Principal $p -Settings $s -Force | Out-Null";
+        int code = RunHidden("powershell.exe", $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"{ps}\"");
+        if (code != 0) throw new InvalidOperationException($"Aufgabe konnte nicht angelegt werden (Code {code}).");
+    }
+
+    private static string Esc(string s) => s.Replace("'", "''");
+
+    private static int RunHidden(string file, string args)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo(file, args)
+        {
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        p.StandardOutput.ReadToEnd();
+        p.StandardError.ReadToEnd();
+        p.WaitForExit(30_000);
+        return p.HasExited ? p.ExitCode : -1;
     }
 }

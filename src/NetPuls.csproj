@@ -10,9 +10,14 @@
     <AssemblyName>NetPuls</AssemblyName>
     <RootNamespace>NetPuls</RootNamespace>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>1.0.0</Version>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>1.1.0</Version>
     <Product>NetPuls</Product>
     <Description>Live-Anzeige des Internet-Traffics</Description>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.2.8" />
+  </ItemGroup>
 
 </Project>
