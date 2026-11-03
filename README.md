@@ -54,3 +54,11 @@ Zum Ausprobieren geht auch im Ordner `src`: `dotnet run`.
 - `TrayIconRenderer.cs` – zeichnet das Tray-Symbol
 - `HelpWindow.cs` – Hilfe- und Info-Fenster
 - `MiniWindow.cs`, `MainWindow.cs`, `TrayApp.cs` – Fenster, Menü, Ablauf
+
+## Lizenz und Haftungsausschluss
+NetPuls steht unter der [MIT-Lizenz](LICENSE).
+
+Die Nutzung erfolgt auf eigene Gefahr. NetPuls wird kostenlos und ohne jede Gewährleistung
+bereitgestellt. Der Autor übernimmt keine Haftung für Schäden, Datenverluste oder Fehlfunktionen,
+die durch die Nutzung entstehen, soweit gesetzlich zulässig. Die angezeigten Werte sind Richtwerte
+und nicht für Abrechnungszwecke geeignet.
