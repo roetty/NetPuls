@@ -44,7 +44,13 @@ public sealed class EtwInternetCounter : IDisposable
         if (!IsAdmin()) throw new UnauthorizedAccessException("Keine Administratorrechte.");
 
         _session = new TraceEventSession(SessionName) { StopOnDispose = true };
-        _session.EnableProvider(KernelNetwork, TraceEventLevel.Informational, ulong.MaxValue);
+        RefreshOwnAddresses();
+        // Nur die Daten-Ereignisse abonnieren (spart CPU, z. B. bei vielen Verbindungsfehlern)
+        var options = new TraceEventProviderOptions
+        {
+            EventIDsToEnable = SendIds.Concat(RecvIds).ToList(),
+        };
+        _session.EnableProvider(KernelNetwork, TraceEventLevel.Informational, ulong.MaxValue, options);
 
         var parser = new RegisteredTraceEventParser(_session.Source);
         parser.All += OnEvent;
@@ -76,12 +82,14 @@ public sealed class EtwInternetCounter : IDisposable
         {
             long size = Convert.ToInt64(data.PayloadByName("size"));
             // Gegenstelle: beim Senden das Ziel, beim Empfangen die Quelle
-            object? raw = data.PayloadByName(send ? "daddr" : "saddr");
-            var remote = ToAddress(raw);
-            AddSample(id, raw, remote, size);
+            var daddr = Normalize(ToAddress(data.PayloadByName("daddr")));
+            var saddr = Normalize(ToAddress(data.PayloadByName("saddr")));
+            var remote = PickRemote(daddr, saddr, send, out bool self);
+            AddSample(id, daddr, saddr, remote, size);
 
+            if (self) { Interlocked.Add(ref _loopBytes, size); return; }
             if (remote == null) { Interlocked.Increment(ref _unparsed); Interlocked.Add(ref _wanBytes, size); return; }
-            if (IPAddress.IsLoopback(remote.IsIPv4MappedToIPv6 ? remote.MapToIPv4() : remote))
+            if (IPAddress.IsLoopback(remote))
             {
                 // Loopback läuft nicht über die Netzwerkkarte -> weder abziehen noch zählen
                 Interlocked.Add(ref _loopBytes, size);
@@ -96,17 +104,64 @@ public sealed class EtwInternetCounter : IDisposable
         catch (Exception ex)
         {
             Interlocked.Increment(ref _unparsed);
-            AddSample(id, "Fehler: " + ex.Message, null, 0);
+            lock (_samples) if (_samples.Count < 40) _samples.Add($"ID {id}: Fehler: {ex.Message}");
         }
     }
 
-    private void AddSample(int id, object? raw, IPAddress? parsed, long size)
+    // ---- Eigene Adressen des PCs -------------------------------------------------------------
+    // Welches Adressfeld (daddr/saddr) die Gegenstelle enthält, ist je nach Protokoll und
+    // Richtung unterschiedlich. Deshalb wird die Gegenstelle als die Adresse bestimmt,
+    // die NICHT zu diesem PC gehört.
+    private volatile HashSet<IPAddress> _own = new();
+    private DateTime _ownRefreshed = DateTime.MinValue;
+
+    private void RefreshOwnAddresses()
+    {
+        var set = new HashSet<IPAddress>();
+        try
+        {
+            foreach (var n in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+                foreach (var u in n.GetIPProperties().UnicastAddresses)
+                    set.Add(Normalize(u.Address)!);
+        }
+        catch { }
+        _own = set;
+        _ownRefreshed = DateTime.UtcNow;
+    }
+
+    private static IPAddress? Normalize(IPAddress? a)
+    {
+        if (a == null) return null;
+        if (a.IsIPv4MappedToIPv6) return a.MapToIPv4();
+        if (a.AddressFamily == AddressFamily.InterNetworkV6 && a.ScopeId != 0) return new IPAddress(a.GetAddressBytes());
+        return a;
+    }
+
+    private bool IsOwn(IPAddress? a) => a != null && (IPAddress.IsLoopback(a) || _own.Contains(a));
+
+    private IPAddress? PickRemote(IPAddress? daddr, IPAddress? saddr, bool send, out bool self)
+    {
+        if ((DateTime.UtcNow - _ownRefreshed).TotalSeconds > 30)
+        {
+            _ownRefreshed = DateTime.UtcNow; // nur ein Thread soll neu laden
+            ThreadPool.QueueUserWorkItem(_ => RefreshOwnAddresses());
+        }
+        bool dOwn = IsOwn(daddr), sOwn = IsOwn(saddr);
+        self = dOwn && sOwn;
+        if (self) return null;
+        if (dOwn && saddr != null) return saddr;
+        if (sOwn && daddr != null) return daddr;
+        return send ? daddr ?? saddr : saddr ?? daddr; // unbekannt: nach Richtung raten
+    }
+
+    private void AddSample(int id, IPAddress? daddr, IPAddress? saddr, IPAddress? remote, long size)
     {
         lock (_samples)
         {
             if (_samples.Count >= 40) return;
-            _samples.Add($"ID {id}: size={size}, adresse roh={raw ?? "null"} ({raw?.GetType().Name ?? "-"}), " +
-                         $"erkannt={parsed?.ToString() ?? "NEIN"}, heimnetz={(parsed == null ? "-" : IsLocal(parsed) ? "ja" : "nein")}");
+            _samples.Add($"ID {id}: size={size}, daddr={daddr?.ToString() ?? "?"}{(IsOwn(daddr) ? " (eigene)" : "")}, " +
+                         $"saddr={saddr?.ToString() ?? "?"}{(IsOwn(saddr) ? " (eigene)" : "")}, " +
+                         $"gegenstelle={remote?.ToString() ?? "-"}, heimnetz={(remote == null ? "-" : IsLocal(remote) ? "ja" : "nein")}");
         }
     }
 
@@ -119,7 +174,8 @@ public sealed class EtwInternetCounter : IDisposable
         sb.AppendLine($"Adresse nicht erkannt: {Interlocked.Read(ref _unparsed)}");
         sb.AppendLine($"Bytes Internet: {Interlocked.Read(ref _wanBytes):N0}");
         sb.AppendLine($"Bytes Heimnetz: {Interlocked.Read(ref _lanBytes):N0}");
-        sb.AppendLine($"Bytes Loopback: {Interlocked.Read(ref _loopBytes):N0}");
+        sb.AppendLine($"Bytes Loopback/PC-intern: {Interlocked.Read(ref _loopBytes):N0}");
+        sb.AppendLine("Eigene Adressen: " + string.Join(", ", _own.Select(a => a.ToString())));
         lock (_idCounts)
             sb.AppendLine("Ereignis-IDs: " + string.Join(", ", _idCounts.OrderBy(k => k.Key).Select(k => $"{k.Key}×{k.Value}")));
         sb.AppendLine("Beispiele:");

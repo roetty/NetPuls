@@ -11,7 +11,7 @@
     <RootNamespace>NetPuls</RootNamespace>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.3.0</Version>
+    <Version>1.3.1</Version>
     <Product>NetPuls</Product>
     <Description>Live-Anzeige des Internet-Traffics</Description>
   </PropertyGroup>
