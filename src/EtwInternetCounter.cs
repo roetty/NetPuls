@@ -7,10 +7,12 @@ using Microsoft.Diagnostics.Tracing.Session;
 namespace NetPuls;
 
 /// <summary>
-/// Zählt nur Internet-Traffic: Über die Windows-Ereignisablaufverfolgung (ETW, Anbieter
+/// Erkennt Heimnetz-Traffic: Über die Windows-Ereignisablaufverfolgung (ETW, Anbieter
 /// "Microsoft-Windows-Kernel-Network") wird jede TCP/UDP-Übertragung mit Quell- und Zieladresse
-/// gemeldet. Übertragungen, deren Gegenstelle im Heimnetz liegt (private, Link-Local-,
-/// Loopback- und Multicast-Adressen), werden ignoriert. Benötigt Administratorrechte.
+/// gemeldet. Gezählt werden hier die Bytes, deren Gegenstelle im Heimnetz liegt (private,
+/// Link-Local- und Multicast-Adressen). Der Sampler zieht sie vom Zähler der Netzwerkkarte ab.
+/// So wird alles, was nicht eindeutig als Heimnetz erkannt wird, als Internet gezählt.
+/// Benötigt Administratorrechte.
 /// </summary>
 public sealed class EtwInternetCounter : IDisposable
 {
@@ -23,7 +25,11 @@ public sealed class EtwInternetCounter : IDisposable
 
     private TraceEventSession? _session;
     private Thread? _thread;
-    private long _down, _up, _events;
+    private long _lanDown, _lanUp, _events;
+    // Statistik für den Diagnosebericht (seit Start)
+    private long _totalEvents, _netEvents, _unparsed, _lanBytes, _wanBytes, _loopBytes;
+    private readonly Dictionary<int, long> _idCounts = new();
+    private readonly List<string> _samples = new();
 
     public static bool IsAdmin()
     {
@@ -51,28 +57,74 @@ public sealed class EtwInternetCounter : IDisposable
         _thread.Start();
     }
 
-    /// <summary>Gibt die seit dem letzten Aufruf gezählten Bytes zurück und setzt die Zähler zurück.</summary>
-    public (long Down, long Up, long Events) Take() =>
-        (Interlocked.Exchange(ref _down, 0), Interlocked.Exchange(ref _up, 0), Interlocked.Exchange(ref _events, 0));
+    /// <summary>Heimnetz-Bytes seit dem letzten Aufruf (und Anzahl Ereignisse), Zähler werden zurückgesetzt.</summary>
+    public (long LanDown, long LanUp, long Events) Take() =>
+        (Interlocked.Exchange(ref _lanDown, 0), Interlocked.Exchange(ref _lanUp, 0), Interlocked.Exchange(ref _events, 0));
 
     private void OnEvent(TraceEvent data)
     {
+        Interlocked.Increment(ref _totalEvents);
         if (data.ProviderGuid != KernelNetwork) return;
         int id = (int)data.ID;
+        lock (_idCounts) _idCounts[id] = _idCounts.GetValueOrDefault(id) + 1;
         bool send = SendIds.Contains(id);
         if (!send && !RecvIds.Contains(id)) return;
 
+        Interlocked.Increment(ref _events);
+        Interlocked.Increment(ref _netEvents);
         try
         {
             long size = Convert.ToInt64(data.PayloadByName("size"));
             // Gegenstelle: beim Senden das Ziel, beim Empfangen die Quelle
-            var remote = ToAddress(data.PayloadByName(send ? "daddr" : "saddr"));
-            Interlocked.Increment(ref _events);
-            if (remote == null || IsLocal(remote)) return;
-            if (send) Interlocked.Add(ref _up, size);
-            else Interlocked.Add(ref _down, size);
+            object? raw = data.PayloadByName(send ? "daddr" : "saddr");
+            var remote = ToAddress(raw);
+            AddSample(id, raw, remote, size);
+
+            if (remote == null) { Interlocked.Increment(ref _unparsed); Interlocked.Add(ref _wanBytes, size); return; }
+            if (IPAddress.IsLoopback(remote.IsIPv4MappedToIPv6 ? remote.MapToIPv4() : remote))
+            {
+                // Loopback läuft nicht über die Netzwerkkarte -> weder abziehen noch zählen
+                Interlocked.Add(ref _loopBytes, size);
+                return;
+            }
+            if (!IsLocal(remote)) { Interlocked.Add(ref _wanBytes, size); return; }
+
+            Interlocked.Add(ref _lanBytes, size);
+            if (send) Interlocked.Add(ref _lanUp, size);
+            else Interlocked.Add(ref _lanDown, size);
         }
-        catch { /* unerwartetes Ereignisformat ignorieren */ }
+        catch (Exception ex)
+        {
+            Interlocked.Increment(ref _unparsed);
+            AddSample(id, "Fehler: " + ex.Message, null, 0);
+        }
+    }
+
+    private void AddSample(int id, object? raw, IPAddress? parsed, long size)
+    {
+        lock (_samples)
+        {
+            if (_samples.Count >= 40) return;
+            _samples.Add($"ID {id}: size={size}, adresse roh={raw ?? "null"} ({raw?.GetType().Name ?? "-"}), " +
+                         $"erkannt={parsed?.ToString() ?? "NEIN"}, heimnetz={(parsed == null ? "-" : IsLocal(parsed) ? "ja" : "nein")}");
+        }
+    }
+
+    /// <summary>Text für den Diagnosebericht.</summary>
+    public string Diagnostics()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"ETW-Ereignisse gesamt: {Interlocked.Read(ref _totalEvents)}");
+        sb.AppendLine($"Davon Daten gesendet/empfangen: {Interlocked.Read(ref _netEvents)}");
+        sb.AppendLine($"Adresse nicht erkannt: {Interlocked.Read(ref _unparsed)}");
+        sb.AppendLine($"Bytes Internet: {Interlocked.Read(ref _wanBytes):N0}");
+        sb.AppendLine($"Bytes Heimnetz: {Interlocked.Read(ref _lanBytes):N0}");
+        sb.AppendLine($"Bytes Loopback: {Interlocked.Read(ref _loopBytes):N0}");
+        lock (_idCounts)
+            sb.AppendLine("Ereignis-IDs: " + string.Join(", ", _idCounts.OrderBy(k => k.Key).Select(k => $"{k.Key}×{k.Value}")));
+        sb.AppendLine("Beispiele:");
+        lock (_samples) foreach (var line in _samples) sb.AppendLine("  " + line);
+        return sb.ToString();
     }
 
     private static IPAddress? ToAddress(object? value) => value switch

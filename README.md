@@ -27,14 +27,15 @@ Tipp: Damit das Tray-Symbol immer sichtbar ist, in Windows 11 unter
 NetPuls zählt standardmäßig **nur Internet-Traffic**. Übertragungen innerhalb des Heimnetzes
 (z. B. Kopien zum NAS, Streaming vom Medienserver, Drucker) werden herausgefiltert.
 
-Dafür nutzt NetPuls die Windows-Ereignisablaufverfolgung (ETW): Windows meldet jede TCP/UDP-Übertragung
+Dafür misst NetPuls den gesamten Traffic der Netzwerkkarte und zieht davon den Heimnetz-Anteil ab.
+Den erkennt es über die Windows-Ereignisablaufverfolgung (ETW): Windows meldet jede TCP/UDP-Übertragung
 mit Quell- und Zieladresse. Liegt die Gegenstelle im Heimnetz (10.x, 172.16–31.x, 192.168.x, Link-Local,
-IPv6 fc00::/7 und fe80::, Multicast), wird sie nicht gezählt. Deshalb braucht NetPuls **Administratorrechte**
+IPv6 fc00::/7 und fe80::, Multicast), wird sie abgezogen. Was nicht eindeutig als Heimnetz erkannt wird,
+zählt als Internet. Deshalb braucht NetPuls **Administratorrechte**
 und fragt beim Start per UAC danach. Mit „Mit Windows starten“ legt NetPuls eine Aufgabe in der
 Aufgabenplanung an, dann startet es bei der Anmeldung ohne Nachfrage.
 
-Gezählt werden die Nutzdaten von TCP/UDP, ohne Paket-Header. Die Werte liegen daher ein paar Prozent unter
-dem, was die Netzwerkkarte insgesamt sieht.
+Bei Problemen hilft der Diagnosebericht: Rechtsklick → „Über NetPuls“ → „Diagnosebericht speichern“.
 
 Ob der Filter aktiv ist, steht im Tooltip des Tray-Symbols und unten links im großen Fenster.
 Klappt er nicht (z. B. ohne Adminrechte), zählt NetPuls wie vorher den gesamten Traffic der Netzwerkkarte
@@ -49,7 +50,7 @@ Zum Ausprobieren geht auch im Ordner `src`: `dotnet run`.
 
 ## Dateien
 - `TrafficSampler.cs` – sammelt jede Sekunde die Messwerte
-- `EtwInternetCounter.cs` – zählt nur Internet-Traffic (ETW, filtert Heimnetz-Adressen)
+- `EtwInternetCounter.cs` – erkennt Heimnetz-Traffic (ETW), der vom Kartenzähler abgezogen wird
 - `TrafficChart.cs` – zeichnet das Diagramm (groß und kompakt)
 - `TrayIconRenderer.cs` – zeichnet das Tray-Symbol
 - `HelpWindow.cs` – Hilfe- und Info-Fenster

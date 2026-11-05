@@ -199,7 +199,7 @@ public sealed class TrayApp : ApplicationContext
     private void ShowHelp(int tab)
     {
         if (_help == null || _help.IsDisposed)
-            _help = new HelpWindow(_appIcon, () => _sampler.ModeInfo);
+            _help = new HelpWindow(_appIcon, () => _sampler.ModeInfo, _sampler.Diagnostics);
         _help.ShowTab(tab);
     }
 

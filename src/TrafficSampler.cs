@@ -60,7 +60,7 @@ public sealed class TrafficSampler : IDisposable
     /// <summary>Kurzbeschreibung, was gerade gemessen wird (für die Anzeige).</summary>
     public string ModeInfo { get; private set; } = "";
     /// <summary>true, wenn tatsächlich nur Internet-Traffic gezählt wird.</summary>
-    public bool FilteringActive => _etw != null;
+    public bool FilteringActive => _etw != null && _etwSilentSeconds < 15;
 
     public TrafficHistory History { get; } = new(3600); // 1 Stunde bei 1 s
     public event Action<Sample>? Sampled;
@@ -97,7 +97,7 @@ public sealed class TrafficSampler : IDisposable
                 var etw = new EtwInternetCounter();
                 etw.Start();
                 _etw = etw;
-                ModeInfo = "Nur Internet-Traffic (Heimnetz wird herausgefiltert)";
+                ModeInfo = "Nur Internet-Traffic (Heimnetz wird abgezogen)";
                 return;
             }
             catch (UnauthorizedAccessException)
@@ -193,22 +193,17 @@ public sealed class TrafficSampler : IDisposable
 
         if (_etw != null)
         {
-            var (down, up, events) = _etw.Take();
-            // Sicherheitsnetz: Wenn die Netzwerkkarte deutlich Traffic zeigt, der Filter aber
-            // gar nichts meldet, funktioniert er auf diesem PC nicht -> auf Kartenzähler zurückfallen.
+            // Internet = alles auf der Netzwerkkarte minus erkannter Heimnetz-Traffic.
+            // Was der Filter nicht eindeutig als Heimnetz erkennt, bleibt also drin.
+            var (lanDown, lanUp, events) = _etw.Take();
+            dRx = Math.Max(0, dRx - lanDown);
+            dTx = Math.Max(0, dTx - lanUp);
+
             if (events == 0 && dRx + dTx > 50_000) _etwSilentSeconds++;
             else if (events > 0) _etwSilentSeconds = 0;
-            if (_etwSilentSeconds >= 15)
-            {
-                _etw.Dispose();
-                _etw = null;
-                ModeInfo = "Achtung: Heimnetz wird mitgezählt – Filter liefert keine Daten";
-            }
-            else
-            {
-                dRx = down;
-                dTx = up;
-            }
+            ModeInfo = _etwSilentSeconds >= 15
+                ? "Achtung: Heimnetz wird mitgezählt – Filter liefert keine Daten"
+                : "Nur Internet-Traffic (Heimnetz wird abgezogen)";
         }
 
         if (seconds < 0.2) return; // erster Aufruf: nur Startwerte merken
@@ -216,6 +211,34 @@ public sealed class TrafficSampler : IDisposable
         var sample = new Sample(DateTime.Now, dRx / seconds, dTx / seconds);
         History.Add(sample);
         Sampled?.Invoke(sample);
+    }
+
+    /// <summary>Diagnosebericht: Modus, Netzwerkkarten, Filterstatistik.</summary>
+    public string Diagnostics()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"Modus: {ModeInfo}");
+        sb.AppendLine($"Nur Internet eingestellt: {_internetOnly}, Filter aktiv: {FilteringActive}, Admin: {EtwInternetCounter.IsAdmin()}");
+        sb.AppendLine($"Gewählte Karte: {(_adapterId ?? "automatisch")}");
+        sb.AppendLine("Gemessene Karten:");
+        foreach (var n in _interfaces) sb.AppendLine($"  {n.Name} | {n.Description} | {n.NetworkInterfaceType}");
+        sb.AppendLine("Alle aktiven Karten:");
+        try
+        {
+            foreach (var n in AllUsableInterfaces())
+            {
+                var st = n.GetIPStatistics();
+                sb.AppendLine($"  {n.Name} | {n.Description} | {n.NetworkInterfaceType} | Gateway: {HasGateway(n)} | " +
+                              $"empfangen {st.BytesReceived:N0} B, gesendet {st.BytesSent:N0} B");
+            }
+        }
+        catch (Exception ex) { sb.AppendLine("  Fehler: " + ex.Message); }
+        sb.AppendLine("Letzte 20 Messwerte (Bytes/s):");
+        foreach (var x in History.Last(20)) sb.AppendLine($"  {x.Time:HH:mm:ss}  ↓ {x.Down:N0}  ↑ {x.Up:N0}");
+        sb.AppendLine();
+        sb.AppendLine("Filter:");
+        sb.AppendLine(_etw?.Diagnostics() ?? "  (nicht aktiv)");
+        return sb.ToString();
     }
 
     public void Dispose()

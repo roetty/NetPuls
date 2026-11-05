@@ -15,6 +15,7 @@ public sealed class HelpWindow : Form
     private readonly TabControl _tabs;
     private readonly Label _status;
     private readonly Func<string> _modeInfo;
+    private readonly Func<string> _diagnostics;
 
     private const string HelpText =
 @"SYMBOL IN DER TASKLEISTE
@@ -41,8 +42,8 @@ NUR INTERNET-TRAFFIC
 NetPuls zählt nur Daten, die mit dem Internet ausgetauscht werden.
 Übertragungen im Heimnetz (NAS, Drucker, Streaming im LAN) werden herausgefiltert.
 Dafür sind Administratorrechte nötig, deshalb fragt Windows beim Start nach.
-Gezählt werden die Nutzdaten ohne Paket-Header, die Werte liegen daher
-ein paar Prozent unter denen der Netzwerkkarte.
+Gemessen wird der gesamte Traffic der Netzwerkkarte, davon wird alles abgezogen,
+was eindeutig mit Geräten im Heimnetz ausgetauscht wurde.
 Mit „Heimnetz-Traffic mitzählen“ im Menü wird stattdessen alles gezählt,
 was über die Netzwerkkarte läuft. Die Auswahl unter „Netzwerkkarte“ gilt nur dann.
 
@@ -58,11 +59,16 @@ BEENDEN
 Rechtsklick auf das Symbol → Beenden.
 
 TASTEN
-F1 öffnet diese Hilfe im großen Fenster.";
+F1 öffnet diese Hilfe im großen Fenster.
 
-    public HelpWindow(Icon icon, Func<string> modeInfo)
+PROBLEME?
+Unter „Info“ → „Diagnosebericht speichern“ entsteht eine Textdatei auf dem Desktop,
+die zeigt, was NetPuls misst.";
+
+    public HelpWindow(Icon icon, Func<string> modeInfo, Func<string> diagnostics)
     {
         _modeInfo = modeInfo;
+        _diagnostics = diagnostics;
         Text = "NetPuls – Hilfe und Info";
         Icon = icon;
         BackColor = Bg;
@@ -128,7 +134,20 @@ F1 öffnet diese Hilfe im großen Fenster.";
             Text = $".NET {Environment.Version} · {Environment.OSVersion.VersionString}\r\n" +
                    "Messung über die Windows-Ereignisablaufverfolgung (ETW).",
         };
-        flow.Controls.AddRange(new Control[] { title, version, desc, _status, link, settingsLink, tech });
+        var diag = new Button
+        {
+            Text = "Diagnosebericht speichern", FlatStyle = FlatStyle.Flat, AutoSize = true,
+            BackColor = Color.FromArgb(45, 49, 56), ForeColor = Fg, Margin = new Padding(3, 14, 3, 0),
+        };
+        diag.FlatAppearance.BorderColor = Color.FromArgb(70, 76, 86);
+        diag.Click += (_, _) => SaveDiagnostics();
+        var diagHint = new Label
+        {
+            AutoSize = true, ForeColor = Dim, MaximumSize = new Size(LogicalToDeviceUnits(560), 0),
+            Text = "Speichert eine Textdatei auf dem Desktop, die bei der Fehlersuche hilft. " +
+                   "Am besten während etwas heruntergeladen wird.",
+        };
+        flow.Controls.AddRange(new Control[] { title, version, desc, _status, link, settingsLink, tech, diag, diagHint });
         info.Controls.Add(flow);
 
         _tabs.TabPages.Add(help);
@@ -176,6 +195,24 @@ F1 öffnet diese Hilfe im großen Fenster.";
     {
         if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); }
         base.OnFormClosing(e);
+    }
+
+    private void SaveDiagnostics()
+    {
+        try
+        {
+            string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "NetPuls-Diagnose.txt");
+            string text = $"NetPuls {AppVersion} – Diagnose vom {DateTime.Now:dd.MM.yyyy HH:mm:ss}\r\n" +
+                          $"{Environment.OSVersion.VersionString}, .NET {Environment.Version}\r\n\r\n" +
+                          _diagnostics().Replace("\r\n", "\n").Replace("\n", "\r\n");
+            File.WriteAllText(path, text, System.Text.Encoding.UTF8);
+            Open(path);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("Diagnose konnte nicht gespeichert werden:\n" + ex.Message, "NetPuls",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
     }
 
     private static void Open(string target)
