@@ -92,7 +92,7 @@ public sealed class TrayApp : ApplicationContext
         _tray.Text = tip.Length > 127 ? tip[..127] : tip;
 
         _mini.OnTick();
-        if (_mini.Visible)
+        if (_mini.Mode != MiniMode.Off)
         {
             _mini.Chart.UseBits = bits;
             _mini.Chart.Invalidate();

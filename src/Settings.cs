@@ -80,17 +80,36 @@ public static class Autostart
 
         string path = Environment.ProcessPath ?? throw new InvalidOperationException("Programmpfad unbekannt.");
         string user = System.Security.Principal.WindowsIdentity.GetCurrent().Name;
-        string ps =
-            $"$a = New-ScheduledTaskAction -Execute '{Esc(path)}'; " +
-            $"$t = New-ScheduledTaskTrigger -AtLogOn -User '{Esc(user)}'; " +
-            $"$p = New-ScheduledTaskPrincipal -UserId '{Esc(user)}' -LogonType Interactive -RunLevel Highest; " +
-            "$s = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew; " +
-            $"Register-ScheduledTask -TaskName '{TaskName}' -Action $a -Trigger $t -Principal $p -Settings $s -Force | Out-Null";
-        int code = RunHidden("powershell.exe", $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"{ps}\"");
-        if (code != 0) throw new InvalidOperationException($"Aufgabe konnte nicht angelegt werden (Code {code}).");
+        string xml = $"""
+            <?xml version="1.0" encoding="UTF-16"?>
+            <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+              <RegistrationInfo><Description>NetPuls: Live-Anzeige des Internet-Traffics</Description></RegistrationInfo>
+              <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{Xml(user)}</UserId></LogonTrigger></Triggers>
+              <Principals><Principal id="Author"><UserId>{Xml(user)}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>HighestAvailable</RunLevel></Principal></Principals>
+              <Settings>
+                <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+                <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+                <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+                <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+                <Enabled>true</Enabled>
+              </Settings>
+              <Actions Context="Author"><Exec><Command>{Xml(path)}</Command></Exec></Actions>
+            </Task>
+            """;
+        string file = Path.Combine(Path.GetTempPath(), "NetPuls-Autostart.xml");
+        File.WriteAllText(file, xml, System.Text.Encoding.Unicode);
+        try
+        {
+            int code = RunHidden("schtasks.exe", $"/Create /TN \"{TaskName}\" /XML \"{file}\" /F");
+            if (code != 0) throw new InvalidOperationException($"Aufgabe konnte nicht angelegt werden (Code {code}).");
+        }
+        finally
+        {
+            try { File.Delete(file); } catch { }
+        }
     }
 
-    private static string Esc(string s) => s.Replace("'", "''");
+    private static string Xml(string s) => System.Security.SecurityElement.Escape(s) ?? s;
 
     private static int RunHidden(string file, string args)
     {

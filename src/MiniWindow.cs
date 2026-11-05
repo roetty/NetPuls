@@ -6,7 +6,8 @@ public enum MiniMode { Off, Free, Taskbar }
 
 /// <summary>
 /// Kleines, randloses Fenster mit Live-Diagramm. Zwei Modi:
-/// Free = frei verschiebbar, im Vordergrund. Taskbar = sitzt in der Taskleiste links neben dem Infobereich.
+/// Free = frei verschiebbar, im Vordergrund.
+/// Taskbar = wird als Kindfenster in die Windows-Taskleiste eingesetzt (links neben dem Infobereich).
 /// </summary>
 public sealed class MiniWindow : Form
 {
@@ -20,6 +21,20 @@ public sealed class MiniWindow : Form
     [DllImport("shell32.dll")] private static extern int SHQueryUserNotificationState(out int state);
     [DllImport("user32.dll")] private static extern IntPtr SetWinEventHook(uint min, uint max, IntPtr hmod, WinEventProc proc, uint pid, uint tid, uint flags);
     [DllImport("user32.dll")] private static extern bool UnhookWinEvent(IntPtr hook);
+    [DllImport("user32.dll")] private static extern IntPtr SetParent(IntPtr child, IntPtr parent);
+    [DllImport("user32.dll")] private static extern IntPtr GetParent(IntPtr hWnd);
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int index);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int index, IntPtr value);
+    [DllImport("user32.dll")] private static extern bool ScreenToClient(IntPtr hWnd, ref POINT p);
+    [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr hWnd);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT { public int X, Y; }
+
+    private const int GWL_STYLE = -16, GWL_EXSTYLE = -20;
+    private const long WS_CHILD = 0x40000000L, WS_POPUP = 0x80000000L, WS_CLIPSIBLINGS = 0x04000000L;
+    private static readonly IntPtr HWND_TOP = IntPtr.Zero;
+    private const uint SWP_SHOWWINDOW = 0x40, SWP_FRAMECHANGED = 0x20, SWP_NOZORDER = 0x4;
 
     private delegate void WinEventProc(IntPtr hook, uint evt, IntPtr hwnd, int idObj, int idChild, uint thread, uint time);
 
@@ -36,6 +51,7 @@ public sealed class MiniWindow : Form
     private IntPtr _hook;
     private bool _dragging;
     private bool _hiddenForFullscreen;
+    private IntPtr _embeddedIn; // Taskleiste, in die das Fenster eingesetzt ist
 
     public TrafficChart Chart { get; }
     public MiniMode Mode { get; private set; } = MiniMode.Free;
@@ -97,6 +113,13 @@ public sealed class MiniWindow : Form
         {
             var cp = base.CreateParams;
             cp.ExStyle |= WS_EX_TOOLWINDOW | WS_EX_TOPMOST; // nicht in Alt+Tab
+            if (_embeddedIn != IntPtr.Zero)
+            {
+                // Falls WinForms das Fenster neu erzeugt: gleich wieder als Teil der Taskleiste
+                cp.Style = (int)((cp.Style & ~WS_POPUP) | WS_CHILD | WS_CLIPSIBLINGS);
+                cp.ExStyle &= ~WS_EX_TOPMOST;
+                cp.Parent = _embeddedIn;
+            }
             return cp;
         }
     }
@@ -108,6 +131,9 @@ public sealed class MiniWindow : Form
         Chart.TaskbarLayout = mode == MiniMode.Taskbar;
         Padding = mode == MiniMode.Taskbar ? new Padding(0) : new Padding(1);
         Opacity = mode == MiniMode.Taskbar ? 1.0 : 0.92;
+        _ = Handle; // Fenster-Handle sicher erzeugen
+
+        if (mode != MiniMode.Taskbar) Unembed();
 
         if (mode == MiniMode.Off)
         {
@@ -116,15 +142,77 @@ public sealed class MiniWindow : Form
             return;
         }
 
-        UpdateSize();
-        if (mode == MiniMode.Taskbar) Reposition();
-        else PlaceAt(freeX, freeY);
+        if (mode == MiniMode.Taskbar)
+        {
+            Unhook();
+            ApplyTaskbarTheme();
+            if (!Embed())
+            {
+                // Taskleiste nicht gefunden: vorerst frei anzeigen, OnTick versucht es erneut
+                UpdateSize();
+                PlaceAt(null, null);
+                Show();
+            }
+            Chart.Invalidate();
+            return;
+        }
 
+        Chart.ApplyDarkTheme();
+        UpdateSize();
+        PlaceAt(freeX, freeY);
         if (!_hiddenForFullscreen) Show();
         KeepOnTop();
         if (_hook == IntPtr.Zero)
             _hook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, _foregroundProc, 0, 0, WINEVENT_OUTOFCONTEXT);
         Chart.Invalidate();
+    }
+
+    /// <summary>Setzt das Fenster als Kindfenster in die Taskleiste ein (wie Taskleisten-Erweiterungen).</summary>
+    private bool Embed()
+    {
+        var bar = FindWindow("Shell_TrayWnd", null);
+        if (bar == IntPtr.Zero) return false;
+        if (_embeddedIn != bar)
+        {
+            long style = (long)GetWindowLongPtr(Handle, GWL_STYLE);
+            style = (style & ~WS_POPUP) | WS_CHILD | WS_CLIPSIBLINGS;
+            SetWindowLongPtr(Handle, GWL_STYLE, (IntPtr)style);
+            long ex = (long)GetWindowLongPtr(Handle, GWL_EXSTYLE);
+            SetWindowLongPtr(Handle, GWL_EXSTYLE, (IntPtr)(ex & ~(long)WS_EX_TOPMOST));
+            SetParent(Handle, bar);
+            _embeddedIn = bar;
+        }
+        Visible = true;
+        Reposition();
+        return true;
+    }
+
+    /// <summary>Holt das Fenster aus der Taskleiste zurück (wieder normales Fenster).</summary>
+    private void Unembed()
+    {
+        if (_embeddedIn == IntPtr.Zero || !IsHandleCreated) { _embeddedIn = IntPtr.Zero; return; }
+        Hide();
+        SetParent(Handle, IntPtr.Zero);
+        long style = (long)GetWindowLongPtr(Handle, GWL_STYLE);
+        style = (style & ~WS_CHILD) | WS_POPUP;
+        SetWindowLongPtr(Handle, GWL_STYLE, (IntPtr)style);
+        SetWindowPos(Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        _embeddedIn = IntPtr.Zero;
+    }
+
+    /// <summary>Hintergrund passend zur hellen oder dunklen Taskleiste.</summary>
+    private void ApplyTaskbarTheme()
+    {
+        bool light = false;
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            light = key?.GetValue("SystemUsesLightTheme") is int v && v == 1;
+        }
+        catch { }
+        if (light) Chart.ApplyLightTheme(); else Chart.ApplyTaskbarDarkTheme();
+        BackColor = Chart.BackColor;
     }
 
     private void OnChartMouseDown(object? sender, MouseEventArgs e)
@@ -137,10 +225,10 @@ public sealed class MiniWindow : Form
         SendMessage(Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
         _dragging = false;
 
-        if (Mode == MiniMode.Taskbar && TrayNotifyLeft() is int trayLeft)
+        if (Mode == MiniMode.Taskbar && TrayNotifyLeft() is int trayLeft && GetWindowRect(Handle, out var w))
         {
             // Im Taskleisten-Modus nur waagerecht verschieben: Abstand zum Infobereich merken
-            TaskbarOffset = Math.Max(0, trayLeft - Right);
+            TaskbarOffset = Math.Max(0, trayLeft - w.Right - Dp(6));
             Reposition();
         }
         Moved?.Invoke();
@@ -182,30 +270,43 @@ public sealed class MiniWindow : Form
         return GetWindowRect(bar, out var r) ? r.Right - (r.Right - r.Left) / 6 : null;
     }
 
-    /// <summary>Setzt das Fenster in die Taskleiste, links neben den Infobereich.</summary>
+    /// <summary>Positioniert das eingesetzte Fenster in der Taskleiste, links neben dem Infobereich.</summary>
     public void Reposition()
     {
-        if (Mode != MiniMode.Taskbar || _dragging) return;
+        if (Mode != MiniMode.Taskbar || _dragging || _embeddedIn == IntPtr.Zero) return;
         var bar = TaskbarRect();
         var trayLeft = TrayNotifyLeft();
-        if (bar is not { } r || trayLeft is not int tl || r.Height >= r.Width)
-        {
-            // Taskleiste nicht gefunden oder senkrecht: unten rechts schweben
-            PlaceAt(null, null);
-            return;
-        }
-        int h = r.Height - Dp(8);
-        if (Height != Math.Max(Dp(28), h)) UpdateSize();
-        int x = tl - TaskbarOffset - Width - Dp(6);
-        int y = r.Top + (r.Height - Height) / 2;
-        x = Math.Max(r.Left, x);
-        if (Location != new Point(x, y)) Location = new Point(x, y);
+        if (bar is not { } r || trayLeft is not int tl) return;
+
+        bool vertical = r.Height > r.Width;
+        int w = vertical ? r.Width - Dp(4) : Dp(185);
+        int h = vertical ? Dp(40) : r.Height - Dp(6);
+        int screenX = vertical ? r.Left + Dp(2) : Math.Max(r.Left, tl - TaskbarOffset - w - Dp(6));
+        int screenY = vertical ? r.Bottom - Dp(160) : r.Top + (r.Height - h) / 2;
+
+        // Bildschirm- in Taskleisten-Koordinaten umrechnen
+        var p = new POINT { X = screenX, Y = screenY };
+        ScreenToClient(_embeddedIn, ref p);
+        SetWindowPos(Handle, HWND_TOP, p.X, p.Y, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
     }
 
-    /// <summary>Jede Sekunde aufgerufen: Vollbild prüfen, Position und Vordergrund halten.</summary>
+    /// <summary>Jede Sekunde aufgerufen.</summary>
     public void OnTick()
     {
         if (Mode == MiniMode.Off) return;
+
+        if (Mode == MiniMode.Taskbar)
+        {
+            // Explorer neu gestartet oder Taskleiste noch nicht da: erneut einsetzen
+            var bar = FindWindow("Shell_TrayWnd", null);
+            if (bar != IntPtr.Zero && (bar != _embeddedIn || !IsWindow(_embeddedIn) || GetParent(Handle) != bar))
+            {
+                _embeddedIn = IntPtr.Zero;
+                Embed();
+            }
+            else Reposition();
+            return;
+        }
 
         bool fullscreen = false;
         try
@@ -218,15 +319,13 @@ public sealed class MiniWindow : Form
         if (fullscreen && Visible) { _hiddenForFullscreen = true; Hide(); return; }
         if (!fullscreen && _hiddenForFullscreen) { _hiddenForFullscreen = false; Show(); }
         if (!Visible) return;
-
-        if (Mode == MiniMode.Taskbar) Reposition();
         KeepOnTop();
     }
 
     /// <summary>Hält das Fenster über der Taskleiste, auch wenn diese angeklickt wurde.</summary>
     public void KeepOnTop()
     {
-        if (Visible && IsHandleCreated && !_dragging)
+        if (Mode == MiniMode.Free && Visible && IsHandleCreated && !_dragging)
             SetWindowPos(Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     }
 
@@ -239,6 +338,7 @@ public sealed class MiniWindow : Form
     protected override void Dispose(bool disposing)
     {
         Unhook();
+        if (disposing) Unembed();
         base.Dispose(disposing);
     }
 }

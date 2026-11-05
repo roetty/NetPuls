@@ -5,20 +5,28 @@ Kleines Tray-Programm, das nur eines macht: den aktuellen Download/Upload live a
 ## Was es kann
 - **Tray-Symbol als Mini-Diagramm**: obere Hälfte grün = Download, untere Hälfte orange = Upload.
   Mauszeiger drauf zeigt die aktuellen Werte. Linksklick öffnet das große Fenster.
-- **Kleine Grafik in der Taskleiste**: Live-Kurve mit Download/Upload direkt in der Taskleiste links neben der Uhr.
-  Alternativ als frei verschiebbares Fenster (Menü → „Kleine Grafik“). Doppelklick öffnet das große Fenster.
-  Bei Vollbild-Anwendungen blendet sie sich automatisch aus.
+- **Kleine Grafik in der Taskleiste**: Live-Kurve mit Download/Upload, direkt in die Taskleiste eingesetzt
+  (links neben der Uhr, passt sich heller/dunkler Taskleiste an). Alternativ als frei verschiebbares Fenster
+  (Menü → „Kleine Grafik“). Doppelklick öffnet das große Fenster.
 - **Großes Fenster**: Live-Diagramm mit Achsen, aktuelle Werte, Spitzenwerte, Zeitraum 1–60 Minuten.
 - Rechtsklick-Menü: kleine Grafik (Taskleiste/frei/aus), Heimnetz mitzählen an/aus, Netzwerkkarte wählen, Einheit (Mbit/s oder MB/s), Autostart, Hilfe, Über NetPuls, Beenden.
 - **Hilfe und Info**: eigenes Fenster mit Bedienungshilfe und Programm-Infos (Menü, „?“-Knopf oder F1 im großen Fenster).
 - Keine Statistik, keine Datenbank, keine Installation. Einstellungen liegen in `%APPDATA%\NetPuls\settings.json`.
 
 ## Download
-[**NetPuls.exe herunterladen**](https://github.com/roetty/NetPuls/raw/main/download/NetPuls.exe) (Windows 10/11, 64 Bit, ca. 70 MB)
+[**NetPuls.exe herunterladen**](https://github.com/roetty/NetPuls/raw/main/download/NetPuls.exe) (Windows 10/11, 64 Bit, ca. 8 MB)
+
+Benötigt die **.NET 8 Desktop Runtime** von Microsoft. Fehlt sie, zeigt Windows beim ersten Start einen
+Hinweis mit Download-Link. Alternativ einmalig in der Eingabeaufforderung:
+`winget install Microsoft.DotNet.DesktopRuntime.8`
 
 ## Starten
 `NetPuls.exe` doppelklicken. Fertig. (Windows SmartScreen meldet evtl. „unbekannter Herausgeber“,
-weil die Datei nicht signiert ist: „Weitere Informationen“ → „Trotzdem ausführen“.)
+weil die Datei nicht signiert ist: „Weitere Informationen“ → „Trotzdem ausführen“, oder dauerhaft:
+Rechtsklick → Eigenschaften → „Zulassen“.)
+
+Meldet der Browser oder Defender einen „Virus“, ist das ein Fehlalarm bei unsignierten Programmen,
+die Adminrechte anfordern. Der komplette Quellcode liegt hier im Repository.
 
 Tipp: Damit das Tray-Symbol immer sichtbar ist, in Windows 11 unter
 *Einstellungen → Personalisierung → Taskleiste → Andere Symbole der Taskleiste* NetPuls einschalten

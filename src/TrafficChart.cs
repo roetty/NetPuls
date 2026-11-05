@@ -7,7 +7,31 @@ public sealed class TrafficChart : Control
 {
     public static readonly Color DownColor = Color.FromArgb(52, 211, 120);
     public static readonly Color UpColor = Color.FromArgb(255, 145, 60);
-    private static readonly Color GridColor = Color.FromArgb(52, 58, 66);
+    private Color GridColor = Color.FromArgb(52, 58, 66);
+    private Color _down = DownColor, _up = UpColor;
+
+    public void ApplyDarkTheme()
+    {
+        BackColor = Color.FromArgb(22, 25, 30);
+        GridColor = Color.FromArgb(52, 58, 66);
+        _down = DownColor; _up = UpColor;
+    }
+
+    /// <summary>Farben für die dunkle Windows-11-Taskleiste.</summary>
+    public void ApplyTaskbarDarkTheme()
+    {
+        BackColor = Color.FromArgb(28, 28, 28);
+        GridColor = Color.FromArgb(55, 55, 55);
+        _down = DownColor; _up = UpColor;
+    }
+
+    /// <summary>Farben für die helle Taskleiste.</summary>
+    public void ApplyLightTheme()
+    {
+        BackColor = Color.FromArgb(238, 238, 238);
+        GridColor = Color.FromArgb(205, 205, 205);
+        _down = Color.FromArgb(0, 140, 70); _up = Color.FromArgb(215, 95, 0);
+    }
 
     public TrafficHistory? History { get; set; }
     /// <summary>Angezeigter Zeitraum in Sekunden.</summary>
@@ -96,11 +120,11 @@ public sealed class TrafficChart : Control
             }
 
             g.SetClip(plot);
-            FillArea(g, down, plot.Bottom, Color.FromArgb(90, DownColor));
-            FillArea(g, up, plot.Bottom, Color.FromArgb(45, UpColor));
-            using (var p = new Pen(DownColor, Px(1.5f)) { LineJoin = LineJoin.Round })
+            FillArea(g, down, plot.Bottom, Color.FromArgb(90, _down));
+            FillArea(g, up, plot.Bottom, Color.FromArgb(45, _up));
+            using (var p = new Pen(_down, Px(1.5f)) { LineJoin = LineJoin.Round })
                 g.DrawLines(p, down);
-            using (var p = new Pen(UpColor, Px(1.5f)) { LineJoin = LineJoin.Round })
+            using (var p = new Pen(_up, Px(1.5f)) { LineJoin = LineJoin.Round })
                 g.DrawLines(p, up);
             g.ResetClip();
         }
@@ -109,8 +133,8 @@ public sealed class TrafficChart : Control
         {
             var last = History?.Latest;
             using var f = new Font("Segoe UI", 8.25f, FontStyle.Bold);
-            using var downBrush = new SolidBrush(DownColor);
-            using var upBrush = new SolidBrush(UpColor);
+            using var downBrush = new SolidBrush(_down);
+            using var upBrush = new SolidBrush(_up);
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
             string d = "↓ " + (last is { } a ? Units.Format(a.Down, UseBits) : "–");
             string u = "↑ " + (last is { } b ? Units.Format(b.Up, UseBits) : "–");
