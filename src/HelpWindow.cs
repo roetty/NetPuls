@@ -27,10 +27,14 @@ Tipp: Damit das Symbol immer sichtbar ist, in Windows 11 unter
 Einstellungen → Personalisierung → Taskleiste → Andere Symbole der Taskleiste
 NetPuls einschalten (Windows 10: Symbol aus dem ^-Überlauf in die Taskleiste ziehen).
 
-MINI-FENSTER
-Sitzt über der Uhr und bleibt im Vordergrund.
-Mit der Maus ziehen = verschieben. Doppelklick = großes Fenster.
-Ein- und ausblenden im Menü unter „Mini-Fenster an der Taskleiste“.
+KLEINE GRAFIK
+Im Menü unter „Kleine Grafik“ wählbar:
+• In der Taskleiste: sitzt direkt in der Taskleiste links neben Uhr und Infobereich.
+  Mit der Maus waagerecht ziehen, um den Abstand zur Uhr zu ändern.
+• Frei verschiebbar: schwebendes Fenster, das du überall hinziehen kannst.
+• Aus.
+Doppelklick öffnet das große Fenster. Bei Vollbild (Spiele, Videos, Präsentationen)
+blendet sich die Grafik automatisch aus.
 
 GROSSES FENSTER
 Live-Diagramm mit aktuellen Werten und Spitzenwerten.

@@ -10,6 +10,12 @@ public sealed class Settings
     /// <summary>Heimnetz-Traffic herausfiltern (nur Internet zählen).</summary>
     public bool InternetOnly { get; set; } = true;
     public bool ShowMiniWindow { get; set; } = true;
+    /// <summary>"Free", "Taskbar" oder "Off". Leer = aus ShowMiniWindow übernehmen (alte Einstellungen).</summary>
+    public string? MiniMode { get; set; }
+    public int TaskbarOffset { get; set; }
+
+    public MiniMode GetMiniMode() =>
+        Enum.TryParse<MiniMode>(MiniMode, out var m) ? m : ShowMiniWindow ? NetPuls.MiniMode.Free : NetPuls.MiniMode.Off;
     public int? MiniX { get; set; }
     public int? MiniY { get; set; }
     public int ChartSeconds { get; set; } = 120;

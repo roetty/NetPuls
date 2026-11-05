@@ -10,12 +10,11 @@ public sealed class TrayApp : ApplicationContext
     private readonly TrayIconRenderer _renderer = new();
     private readonly NotifyIcon _tray;
     private readonly ContextMenuStrip _menu;
-    private readonly ToolStripMenuItem _miniItem, _adapterMenu, _bitsItem, _bytesItem, _autostartItem, _lanItem;
+    private readonly ToolStripMenuItem _miniMenu, _miniTaskbar, _miniFree, _miniOff, _adapterMenu, _bitsItem, _bytesItem, _autostartItem, _lanItem;
     private readonly MiniWindow _mini;
     private readonly Icon _appIcon;
     private MainWindow? _main;
     private HelpWindow? _help;
-    private int _tick;
 
     public TrayApp()
     {
@@ -25,7 +24,11 @@ public sealed class TrayApp : ApplicationContext
 
         _menu = new ContextMenuStrip();
         var open = new ToolStripMenuItem("Großes Fenster öffnen", null, (_, _) => ShowMain()) { Font = new Font(SystemFonts.MenuFont ?? Control.DefaultFont, FontStyle.Bold) };
-        _miniItem = new ToolStripMenuItem("Mini-Fenster an der Taskleiste", null, (_, _) => ToggleMini()) { Checked = _settings.ShowMiniWindow };
+        _miniMenu = new ToolStripMenuItem("Kleine Grafik");
+        _miniTaskbar = new ToolStripMenuItem("In der Taskleiste (neben der Uhr)", null, (_, _) => SetMiniMode(MiniMode.Taskbar));
+        _miniFree = new ToolStripMenuItem("Frei verschiebbar", null, (_, _) => SetMiniMode(MiniMode.Free));
+        _miniOff = new ToolStripMenuItem("Aus", null, (_, _) => SetMiniMode(MiniMode.Off));
+        _miniMenu.DropDownItems.AddRange(new ToolStripItem[] { _miniTaskbar, _miniFree, _miniOff });
         _adapterMenu = new ToolStripMenuItem("Netzwerkkarte");
         _adapterMenu.DropDownItems.Add("(wird geladen)");
         _adapterMenu.DropDownOpening += (_, _) => BuildAdapterMenu();
@@ -40,7 +43,7 @@ public sealed class TrayApp : ApplicationContext
         var exit = new ToolStripMenuItem("Beenden", null, (_, _) => Exit());
         _menu.Items.AddRange(new ToolStripItem[]
         {
-            open, _miniItem, new ToolStripSeparator(), _lanItem, _adapterMenu, unitMenu, _autostartItem,
+            open, _miniMenu, new ToolStripSeparator(), _lanItem, _adapterMenu, unitMenu, _autostartItem,
             new ToolStripSeparator(), helpItem, infoItem, new ToolStripSeparator(), exit,
         });
         _menu.Opening += (_, _) =>
@@ -48,7 +51,10 @@ public sealed class TrayApp : ApplicationContext
             _autostartItem.Checked = SafeAutostartState();
             _bitsItem.Checked = _settings.UseBits;
             _bytesItem.Checked = !_settings.UseBits;
-            _miniItem.Checked = _settings.ShowMiniWindow;
+            var mode = _settings.GetMiniMode();
+            _miniTaskbar.Checked = mode == MiniMode.Taskbar;
+            _miniFree.Checked = mode == MiniMode.Free;
+            _miniOff.Checked = mode == MiniMode.Off;
             _lanItem.Checked = !_settings.InternetOnly;
         };
 
@@ -64,9 +70,14 @@ public sealed class TrayApp : ApplicationContext
         _mini = new MiniWindow(_sampler.History, _menu);
         _mini.Chart.UseBits = _settings.UseBits;
         _mini.OpenMainRequested += ShowMain;
-        _mini.Moved += p => { _settings.MiniX = p.X; _settings.MiniY = p.Y; _settings.Save(); };
-        _mini.PlaceAt(_settings.MiniX, _settings.MiniY);
-        if (_settings.ShowMiniWindow) _mini.Show();
+        _mini.TaskbarOffset = _settings.TaskbarOffset;
+        _mini.Moved += () =>
+        {
+            if (_mini.Mode == MiniMode.Taskbar) _settings.TaskbarOffset = _mini.TaskbarOffset;
+            else { _settings.MiniX = _mini.Left; _settings.MiniY = _mini.Top; }
+            _settings.Save();
+        };
+        _mini.SetMode(_settings.GetMiniMode(), _settings.MiniX, _settings.MiniY);
 
         _sampler.Sampled += OnSample;
         _sampler.Start();
@@ -80,11 +91,11 @@ public sealed class TrayApp : ApplicationContext
         string tip = $"{head}\n↓ {Units.Format(s.Down, bits)}\n↑ {Units.Format(s.Up, bits)}";
         _tray.Text = tip.Length > 127 ? tip[..127] : tip;
 
+        _mini.OnTick();
         if (_mini.Visible)
         {
             _mini.Chart.UseBits = bits;
             _mini.Chart.Invalidate();
-            if (++_tick % 3 == 0) _mini.KeepOnTop();
         }
         _main?.UpdateView(bits, AdapterInfo());
     }
@@ -159,11 +170,11 @@ public sealed class TrayApp : ApplicationContext
         _main?.UpdateView(_settings.UseBits, AdapterInfo());
     }
 
-    private void ToggleMini()
+    private void SetMiniMode(MiniMode mode)
     {
-        _settings.ShowMiniWindow = !_settings.ShowMiniWindow;
-        if (_settings.ShowMiniWindow) { _mini.Show(); _mini.KeepOnTop(); }
-        else _mini.Hide();
+        _settings.MiniMode = mode.ToString();
+        _settings.ShowMiniWindow = mode != MiniMode.Off;
+        _mini.SetMode(mode, _settings.MiniX, _settings.MiniY);
         _settings.Save();
     }
 

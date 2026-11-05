@@ -15,6 +15,8 @@ public sealed class TrafficChart : Control
     public bool UseBits { get; set; }
     /// <summary>Kompakte Darstellung ohne Achsen (für das Mini-Fenster).</summary>
     public bool Compact { get; set; }
+    /// <summary>Für die Taskleiste: Werte zweizeilig links, Kurve rechts daneben.</summary>
+    public bool TaskbarLayout { get; set; }
 
     public TrafficChart()
     {
@@ -36,8 +38,9 @@ public sealed class TrafficChart : Control
         double peak = samples.Length == 0 ? 0 : samples.Max(s => Math.Max(s.Down, s.Up));
         double max = Units.NiceMax(peak, UseBits);
 
+        float textWidth = Compact && TaskbarLayout ? Px(84) : 0;
         RectangleF plot = Compact
-            ? new RectangleF(0, Px(2), Width - 1, Height - Px(3))
+            ? new RectangleF(textWidth, Px(2), Width - 1 - textWidth, Height - Px(3))
             : new RectangleF(Px(78), Px(12), Width - Px(78) - Px(14), Height - Px(12) - Px(28));
         if (plot.Width < 10 || plot.Height < 10) return;
 
@@ -102,7 +105,21 @@ public sealed class TrafficChart : Control
             g.ResetClip();
         }
 
-        if (Compact)
+        if (Compact && TaskbarLayout)
+        {
+            var last = History?.Latest;
+            using var f = new Font("Segoe UI", 8.25f, FontStyle.Bold);
+            using var downBrush = new SolidBrush(DownColor);
+            using var upBrush = new SolidBrush(UpColor);
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+            string d = "↓ " + (last is { } a ? Units.Format(a.Down, UseBits) : "–");
+            string u = "↑ " + (last is { } b ? Units.Format(b.Up, UseBits) : "–");
+            float lh = g.MeasureString("↓ 0", f).Height;
+            float top = (Height - 2 * lh) / 2;
+            g.DrawString(d, f, downBrush, Px(3), top);
+            g.DrawString(u, f, upBrush, Px(3), top + lh);
+        }
+        else if (Compact)
         {
             var last = History?.Latest;
             string text = last is { } s

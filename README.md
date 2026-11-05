@@ -5,10 +5,11 @@ Kleines Tray-Programm, das nur eines macht: den aktuellen Download/Upload live a
 ## Was es kann
 - **Tray-Symbol als Mini-Diagramm**: obere Hälfte grün = Download, untere Hälfte orange = Upload.
   Mauszeiger drauf zeigt die aktuellen Werte. Linksklick öffnet das große Fenster.
-- **Mini-Fenster an der Taskleiste**: kleines Live-Diagramm mit Zahlen, sitzt unten rechts über der Uhr,
-  bleibt im Vordergrund, mit der Maus verschiebbar. Doppelklick öffnet das große Fenster.
+- **Kleine Grafik in der Taskleiste**: Live-Kurve mit Download/Upload direkt in der Taskleiste links neben der Uhr.
+  Alternativ als frei verschiebbares Fenster (Menü → „Kleine Grafik“). Doppelklick öffnet das große Fenster.
+  Bei Vollbild-Anwendungen blendet sie sich automatisch aus.
 - **Großes Fenster**: Live-Diagramm mit Achsen, aktuelle Werte, Spitzenwerte, Zeitraum 1–60 Minuten.
-- Rechtsklick-Menü: Mini-Fenster an/aus, Heimnetz mitzählen an/aus, Netzwerkkarte wählen, Einheit (Mbit/s oder MB/s), Autostart, Hilfe, Über NetPuls, Beenden.
+- Rechtsklick-Menü: kleine Grafik (Taskleiste/frei/aus), Heimnetz mitzählen an/aus, Netzwerkkarte wählen, Einheit (Mbit/s oder MB/s), Autostart, Hilfe, Über NetPuls, Beenden.
 - **Hilfe und Info**: eigenes Fenster mit Bedienungshilfe und Programm-Infos (Menü, „?“-Knopf oder F1 im großen Fenster).
 - Keine Statistik, keine Datenbank, keine Installation. Einstellungen liegen in `%APPDATA%\NetPuls\settings.json`.
 
